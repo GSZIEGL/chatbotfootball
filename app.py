@@ -1,16 +1,3 @@
-import streamlit as st
-from groq import Groq
-
-st.sidebar.header("🔑 API beállítás")
-api_key = st.sidebar.text_input("Groq API kulcs", type="password")
-
-if not api_key:
-    st.warning("Adj meg Groq API kulcsot (oldalsáv)!")
-    st.stop()
-
-client = Groq(api_key=api_key)
-
-
 import os
 import streamlit as st
 from groq import Groq
@@ -23,20 +10,27 @@ from docx import Document
 
 def get_groq_client():
     """
-    API kulcs:
-    - helyi futtatásnál: export GROQ_API_KEY="gsk-...."
-    - vagy add meg a Streamlit oldalsávban
+    Groq API kulcs:
+    - Streamlit Cloud-on a Settings → Secrets alatt legyen beállítva:
+        GROQ_API_KEY = "gsk-...."
     """
-    api_key_env = os.getenv("GROQ_API_KEY")
-    api_key_input = st.sidebar.text_input(
-        "",
-        type="password",
-        help="Biztonságosabb, ha környezeti változóban állítod be: GROQ_API_KEY."
-    )
-    api_key = api_key_input or api_key_env
+    api_key = None
+
+    # 1) Próbáljuk secrets-ből (Streamlit Cloud)
+    if "GROQ_API_KEY" in st.secrets:
+        api_key = st.secrets["GROQ_API_KEY"]
+
+    # 2) Ha lokálisan futtatod, használhatod env változóként is
+    if not api_key:
+        api_key = os.getenv("GROQ_API_KEY")
 
     if not api_key:
-        st.error("Adj meg Groq API kulcsot (oldalsáv), vagy állítsd be a GROQ_API_KEY környezeti változót.")
+        st.error(
+            "Nincs beállítva Groq API kulcs.\n\n"
+            "Streamlit Cloudon a Settings → Secrets alatt add meg:\n"
+            'GROQ_API_KEY = "gsk-..."\n\n'
+            "Lokálisan pedig környezeti változóként: export GROQ_API_KEY=..."
+        )
         st.stop()
 
     return Groq(api_key=api_key)
@@ -81,7 +75,7 @@ def build_document_text(uploaded_files):
 
 
 # ------------------------------------------------
-# 3. LLM-hívó függvények (összefoglaló / Q&A / teszt)
+# 3. LLM-hívó függvények
 # ------------------------------------------------
 
 def llm_chat(client: Groq, prompt: str, temperature: float = 0.4) -> str:
