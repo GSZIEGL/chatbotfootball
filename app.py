@@ -1,3 +1,16 @@
+import streamlit as st
+from groq import Groq
+
+st.sidebar.header("🔑 API beállítás")
+api_key = st.sidebar.text_input("Groq API kulcs", type="password")
+
+if not api_key:
+    st.warning("Adj meg Groq API kulcsot (oldalsáv)!")
+    st.stop()
+
+client = Groq(api_key=api_key)
+
+
 import os
 import streamlit as st
 from groq import Groq
