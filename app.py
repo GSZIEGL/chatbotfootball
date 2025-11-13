@@ -175,7 +175,7 @@ stb.
 
 def main():
     st.set_page_config(page_title="Edzői doksi-chatbot & tesztgenerátor", layout="wide")
-    st.title("⚽ Edzői doksi-chatbot & tesztgenerátor (Groq + Streamlit)")
+    st.title("⚽ Edzői doksi-chatbot")
 
     client = get_groq_client()
 
