@@ -16,7 +16,7 @@ def get_groq_client():
     """
     api_key_env = os.getenv("GROQ_API_KEY")
     api_key_input = st.sidebar.text_input(
-        "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",
+        "",
         type="password",
         help="Biztonságosabb, ha környezeti változóban állítod be: GROQ_API_KEY."
     )
