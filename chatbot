@@ -1,0 +1,258 @@
+import os
+import streamlit as st
+from groq import Groq
+from pypdf import PdfReader
+from docx import Document
+
+# ------------------------------------------------
+# 1. Groq kliens inicializálása
+# ------------------------------------------------
+
+def get_groq_client():
+    """
+    API kulcs:
+    - helyi futtatásnál: export GROQ_API_KEY="gsk-...."
+    - vagy add meg a Streamlit oldalsávban
+    """
+    api_key_env = os.getenv("GROQ_API_KEY")
+    api_key_input = st.sidebar.text_input(
+        "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",
+        type="password",
+        help="Biztonságosabb, ha környezeti változóban állítod be: GROQ_API_KEY."
+    )
+    api_key = api_key_input or api_key_env
+
+    if not api_key:
+        st.error("Adj meg Groq API kulcsot (oldalsáv), vagy állítsd be a GROQ_API_KEY környezeti változót.")
+        st.stop()
+
+    return Groq(api_key=api_key)
+
+
+GROQ_MODEL = "llama-3.3-70b-versatile"
+
+
+# ------------------------------------------------
+# 2. PDF / DOCX feldolgozó függvények
+# ------------------------------------------------
+
+def extract_text_from_pdf(file):
+    reader = PdfReader(file)
+    text = ""
+    for page in reader.pages:
+        t = page.extract_text()
+        if t:
+            text += t + "\n"
+    return text
+
+
+def extract_text_from_docx(file):
+    doc = Document(file)
+    return "\n".join([p.text for p in doc.paragraphs])
+
+
+def build_document_text(uploaded_files):
+    full_text = ""
+    for f in uploaded_files:
+        if f.name.lower().endswith(".pdf"):
+            txt = extract_text_from_pdf(f)
+        elif f.name.lower().endswith(".docx"):
+            txt = extract_text_from_docx(f)
+        else:
+            st.warning(f"Nem támogatott formátum: {f.name}")
+            continue
+
+        full_text += "\n" + txt
+
+    return full_text.strip()
+
+
+# ------------------------------------------------
+# 3. LLM-hívó függvények (összefoglaló / Q&A / teszt)
+# ------------------------------------------------
+
+def llm_chat(client: Groq, prompt: str, temperature: float = 0.4) -> str:
+    resp = client.chat.completions.create(
+        model=GROQ_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=temperature,
+    )
+    return resp.choices[0].message.content
+
+
+def summarize_docs(client: Groq, doc_text: str, word_limit: int) -> str:
+    if not doc_text.strip():
+        return "Nincs betöltött szöveg."
+
+    prompt = f"""
+Az alábbi szöveg edzői / szakmai anyag (pl. klubfilozófia, edzéselvek).
+
+Feladatod:
+- Foglald össze maximum {word_limit} szóban.
+- Legyen világos, gyakorlatias, edzőknek szóló nyelven.
+
+SZÖVEG:
+{doc_text}
+"""
+    return llm_chat(client, prompt, temperature=0.3)
+
+
+def ask_question(client: Groq, doc_text: str, question: str) -> str:
+    if not doc_text.strip():
+        return "Nincs betöltött szöveg."
+
+    prompt = f"""
+Az alábbi szöveg egy vagy több dokumentum tartalma (pl. futballfilozófia, edzéselvek, klubdokumentum).
+
+SZÖVEG:
+{doc_text}
+
+KÉRDÉS:
+{question}
+
+VÁLASZ:
+- Csak a szöveg alapján válaszolj.
+- Ha a válasz NINCS benne a szövegben, mondd ezt: "Nincs elég információ a szövegben."
+- Légy tömör, világos, edzőknek szóló stílusban.
+"""
+    return llm_chat(client, prompt, temperature=0.3)
+
+
+def generate_test(client: Groq, doc_text: str, test_type: str, num_questions: int) -> str:
+    if not doc_text.strip():
+        return "Nincs betöltött szöveg."
+
+    if test_type == "Feleletválasztós":
+        style = """
+Feleletválasztós tesztet készíts.
+Minden kérdéshez legyen 4 válaszlehetőség (A–D), és pontosan egy helyes.
+"""
+    else:
+        style = """
+Kiegészítendő kérdéseket készíts.
+Minden kérdésben hiányozzon egy kulcskifejezés (_____ jelöli a hiányt).
+"""
+
+    prompt = f"""
+Az alábbi szöveg alapján állíts össze {num_questions} kérdéses tesztet edzők számára.
+
+{style}
+
+A kérdések mérjék a szöveg megértését, ne legyenek triviálisak.
+
+SZÖVEG:
+{doc_text}
+
+Add vissza magyarul, strukturáltan:
+
+1. kérdés
+A)
+B)
+C)
+D)
+
+...
+
+A végén külön blokkban:
+MEGOLDÓKULCS:
+1. ...
+2. ...
+stb.
+"""
+    return llm_chat(client, prompt, temperature=0.5)
+
+
+# ------------------------------------------------
+# 4. Streamlit UI
+# ------------------------------------------------
+
+def main():
+    st.set_page_config(page_title="Edzői doksi-chatbot & tesztgenerátor", layout="wide")
+    st.title("⚽ Edzői doksi-chatbot & tesztgenerátor (Groq + Streamlit)")
+
+    client = get_groq_client()
+
+    # Session state: dokumentum szövege
+    if "doc_text" not in st.session_state:
+        st.session_state["doc_text"] = ""
+
+    st.markdown("### 1️⃣ Doksik feltöltése")
+
+    uploaded_files = st.file_uploader(
+        "PDF vagy DOCX fájlok feltöltése",
+        type=["pdf", "docx"],
+        accept_multiple_files=True
+    )
+
+    if st.button("📄 Doksik feldolgozása"):
+        if not uploaded_files:
+            st.warning("Előbb tölts fel legalább egy fájlt.")
+        else:
+            with st.spinner("Dokumentumok beolvasása..."):
+                doc_text = build_document_text(uploaded_files)
+                st.session_state["doc_text"] = doc_text
+            st.success(f"Kész! Betöltött szöveg hossza: {len(doc_text)} karakter.")
+
+    if st.session_state["doc_text"]:
+        st.info(f"Betöltött szöveg hossza: {len(st.session_state['doc_text'])} karakter.")
+    else:
+        st.warning("Még nincs betöltött szöveg. Tölts fel doksit és kattints a 'Doksik feldolgozása' gombra.")
+
+    st.markdown("---")
+    st.markdown("### 2️⃣ Funkciók")
+
+    col1, col2, col3 = st.columns(3)
+
+    # -------- ÖSSZEFOGLALÓ --------
+    with col1:
+        st.subheader("📝 Összefoglaló")
+        word_limit = st.selectbox(
+            "Összefoglaló hossza (szóban):",
+            [50, 100, 150, 200],
+            index=1
+        )
+        if st.button("Összefoglaló generálása"):
+            if not st.session_state["doc_text"]:
+                st.warning("Előbb tölts fel és dolgozz fel egy dokumentumot.")
+            else:
+                with st.spinner("Összefoglaló készítése..."):
+                    summary = summarize_docs(client, st.session_state["doc_text"], word_limit)
+                st.markdown("#### Összefoglaló:")
+                st.write(summary)
+
+    # -------- KÉRDÉS-VÁLASZ --------
+    with col2:
+        st.subheader("❓ Kérdés a doksiról")
+        question = st.text_area("Írd be a kérdésed:", height=150)
+        if st.button("Válasz kérése"):
+            if not st.session_state["doc_text"]:
+                st.warning("Előbb tölts fel és dolgozz fel egy dokumentumot.")
+            elif not question.strip():
+                st.warning("Írj be egy kérdést.")
+            else:
+                with st.spinner("Válasz generálása..."):
+                    answer = ask_question(client, st.session_state["doc_text"], question)
+                st.markdown("#### Válasz:")
+                st.write(answer)
+
+    # -------- TESZT GENERÁLÁS --------
+    with col3:
+        st.subheader("🧪 Teszt generálása")
+        test_type = st.radio(
+            "Teszt típusa:",
+            ["Feleletválasztós", "Kiegészítendő"]
+        )
+        num_questions = st.slider("Kérdések száma:", min_value=3, max_value=20, value=5, step=1)
+
+        if st.button("Teszt generálása"):
+            if not st.session_state["doc_text"]:
+                st.warning("Előbb tölts fel és dolgozz fel egy dokumentumot.")
+            else:
+                with st.spinner("Teszt generálása..."):
+                    test_text = generate_test(client, st.session_state["doc_text"], test_type, num_questions)
+                st.markdown("#### Generált teszt:")
+                st.text_area("Teszt (másolható):", value=test_text, height=350)
+
+
+if __name__ == "__main__":
+    main()
