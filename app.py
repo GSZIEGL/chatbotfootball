@@ -215,7 +215,7 @@ def main():
         st.subheader("📝 Összefoglaló")
         word_limit = st.selectbox(
             "Összefoglaló hossza (szóban):",
-            [50, 100, 150, 200],
+            [50, 100, 150, 200, 500, 1000],
             index=1
         )
         if st.button("Összefoglaló generálása"):
